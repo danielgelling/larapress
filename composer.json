@@ -1,0 +1,16 @@
+{
+    "name": "danielgelling/larapress",
+    "description": "Convert laravel based plugin to bind to wordpress",
+    "authors": [
+        {
+            "name": "Daniel Gelling",
+            "email": "info@danielgelling.nl"
+        }
+    ],
+    "require": {},
+    "autoload": {
+        "psr-4": {
+            "Larapress\\": "src/"
+        }
+    }
+}
