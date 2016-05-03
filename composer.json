@@ -7,15 +7,10 @@
             "email": "info@danielgelling.nl"
         }
     ],
-    "require": {
-
-    },
+    "require": {},
     "autoload": {
         "psr-4": {
             "Larapress\\": "src/"
-        },
-        "files": [
-            "src/Illuminate/Foundation/helpers.php"
-        ]
+        }
     }
 }
