@@ -6,5 +6,5 @@ $vendorDir = dirname(dirname(__FILE__));
 $baseDir = dirname($vendorDir);
 
 return array(
-    'Larapress\\' => array($baseDir . '/src'),
+    'Illuminate\\' => array($baseDir . '/src/Illuminate'),
 );
