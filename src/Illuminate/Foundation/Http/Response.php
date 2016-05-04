@@ -1,6 +1,6 @@
 <?php
 
-namespace Larapress\Illuminate\Http;
+namespace Larapress\Illuminate\Foundation\Http;
 
 use Symfony\Component\HttpFoundation\Request;
 use Illuminate\Http\Response as BaseResponse;
@@ -20,7 +20,7 @@ class Response extends BaseResponse
      */
     public function prepare(Request $request)
     {
-        return $this;
+        die('foo');
         $headers = $this->headers;
 
         if ($this->isInformational() || $this->isEmpty()) {
