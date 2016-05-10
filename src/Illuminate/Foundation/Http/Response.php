@@ -20,7 +20,7 @@ class Response extends BaseResponse
      */
     public function prepare(Request $request)
     {
-        die('foo');
+        die('fooa');
         $headers = $this->headers;
 
         if ($this->isInformational() || $this->isEmpty()) {

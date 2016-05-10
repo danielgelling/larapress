@@ -7,8 +7,33 @@ use ReflectionFunction;
 use Illuminate\Http\Request as Request;
 use Illuminate\Routing\Route as BaseRoute;
 
-class Route extends BaseRoute
+class WordpressRoute extends BaseRoute
 {
+    /**
+     * Don't run the route action cause Wordpress will.
+     *
+     * @param  array|string  $methods
+     * @param  string  $uri
+     * @param  \Closure|array  $action
+     * @param  mixed  $params
+     * @return void
+     */
+    public function __construct($methods, $uri, $action, $params)
+    {
+        $this->uri = $uri;
+        $this->params = $params;
+        $this->methods = (array) $methods;
+        $this->action = $this->parseAction($action);
+
+        if (in_array('GET', $this->methods) && ! in_array('HEAD', $this->methods)) {
+            $this->methods[] = 'HEAD';
+        }
+
+        if (isset($this->action['prefix'])) {
+            $this->prefix($this->action['prefix']);
+        }
+    }
+
     /**
      * Don't run the route action cause Wordpress will.
      *
@@ -46,6 +71,10 @@ class Route extends BaseRoute
         } else {
             $parameters = (new ReflectionFunction($action['uses']))->getParameters();
         }
+
+        //SHOULD BE REPLACED
+        if(empty($parameters))
+            (new $class)->$method();
 
         return is_null($subClass) ? $parameters : array_filter($parameters, function ($p) use ($subClass) {
             return $p->getClass() && $p->getClass()->isSubclassOf($subClass);

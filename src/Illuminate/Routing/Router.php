@@ -5,6 +5,7 @@ namespace Larapress\Illuminate\Routing;
 use Illuminate\Http\Request;
 use Illuminate\Container\Container;
 use Larapress\Illuminate\Routing\Route;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Events\RouteMatched;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Routing\Router as BaseRouter;
@@ -16,7 +17,14 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 class Router extends BaseRouter
 {
-   /**
+    /**
+     * This holds all Worpress' default routes.
+     *
+     * @var Larapress\Illuminate\Routing\WordpressRouteCollection
+     */
+    protected $wordpressRoutes;
+
+    /**
      * Create a new Router instance.
      *
      * @param  \Illuminate\Contracts\Events\Dispatcher  $events
@@ -27,6 +35,7 @@ class Router extends BaseRouter
     {
         $this->events = $events;
         $this->routes = new RouteCollection;
+        $this->wordpressRoutes = new WordpressRouteCollection;
         $this->container = $container ?: new Container;
 
         $this->bind('_missing', function ($v) {
@@ -34,6 +43,31 @@ class Router extends BaseRouter
         });
     }
 
+    /**
+     * Add the default Wordpress routes to the routes array, so we can add an
+     * overlying controller.
+     *
+     * @return void
+     */
+    public function wordpress()
+    {
+        $this->createWordpressRoute('GET', 'edit.php', [], 'PostController@index');
+        $this->createWordpressRoute('GET', 'post.php', ['action' => 'edit'], 'PostController@edit');
+    }
+
+    /**
+     * Create a new overlying Wordpress route.
+     *
+     * @param  array|string  $methods
+     * @param  string  $script
+     * @param  array  $params
+     * @param  mixed  $action
+     * @return void
+     */
+    public function createWordpressRoute($methods, $script, $params, $action)
+    {
+        $this->wordpressRoutes->add($this->createRoute($methods, $script, $action, $params));
+    }
 
     /**
      * Create a new route instance.
@@ -43,7 +77,7 @@ class Router extends BaseRouter
      * @param  mixed  $action
      * @return \Illuminate\Routing\Route
      */
-    protected function createRoute($methods, $uri, $action)
+    protected function createRoute($methods, $uri, $action, $params = null)
     {
         // If the route is routing to a controller we will parse the route action into
         // an acceptable array format before registering it and creating this route
@@ -52,9 +86,16 @@ class Router extends BaseRouter
             $action = $this->convertToControllerAction($action);
         }
 
-        $route = $this->newRoute(
-            $methods, $this->prefix($uri), $action
-        );
+        // If the params variable is an array it means it's a Worpress route.
+        if (is_array($params)) {
+            $route = $this->newWordpressRoute(
+                $methods, $uri, $action, $params
+            );
+        } else {
+            $route = $this->newRoute(
+                $methods, $this->prefix($uri), $action
+            );
+        }
 
         // If we have groups that need to be merged, we will merge them now after this
         // route has already been created and is ready to go. After we're done with
@@ -74,11 +115,27 @@ class Router extends BaseRouter
      * @param  array|string  $methods
      * @param  string  $uri
      * @param  mixed  $action
-     * @return \Illuminate\Routing\Route
+     * @return Larapress\Illuminate\Routing\Route
      */
     protected function newRoute($methods, $uri, $action)
     {
         return (new Route($methods, $uri, $action))
+                    ->setRouter($this)
+                    ->setContainer($this->container);
+    }
+
+    /**
+     * Create a new WordpressRoute object.
+     *
+     * @param  array|string  $methods
+     * @param  string  $uri
+     * @param  mixed  $action
+     * @param  mixed  $params
+     * @return Larapress\Illuminate\Routing\WordpressRoute
+     */
+    protected function newWordpressRoute($methods, $uri, $action, $params)
+    {
+        return (new WordpressRoute($methods, $uri, $action, $params))
                     ->setRouter($this)
                     ->setContainer($this->container);
     }
@@ -120,7 +177,7 @@ class Router extends BaseRouter
     protected function findRoute($request)
     {
         try {
-            $this->current = $route = $this->routes->match($request);
+            $this->current = $route = $this->matchRoutes($request);
 
             $this->container->instance('Illuminate\Routing\Route', $route);
 
@@ -128,6 +185,19 @@ class Router extends BaseRouter
         } catch (NotFoundHttpException $e) {
             return;
         }
+    }
+
+    public function matchRoutes($request)
+    {
+        try {
+            return $this->routes->match($request);
+        } catch (NotFoundHttpException $e) { }
+
+        try {
+            return $this->wordpressRoutes->match($request);
+        } catch (NotFoundHttpException $e) { }
+
+        throw new NotFoundHttpException;
     }
 
      /**
@@ -360,5 +430,33 @@ class Router extends BaseRouter
         $slug = strtolower($slug);
 
         return $slug;
+    }
+
+    /**
+     * Substitute the implicit Eloquent model bindings for the route.
+     *
+     * @param  \Illuminate\Routing\Route  $route
+     * @return void
+     */
+    protected function substituteImplicitBindings($route)
+    {
+        $parameters = $route->parameters();
+// dd($parameters);
+        foreach ($route->signatureParameters(Model::class) as $parameter) {
+            $class = $parameter->getClass();
+
+            if (array_key_exists($parameter->name, $parameters) &&
+                ! $route->getParameter($parameter->name) instanceof Model) {
+                $method = $parameter->isDefaultValueAvailable() ? 'first' : 'firstOrFail';
+
+                $model = $class->newInstance();
+
+                $route->setParameter(
+                    $parameter->name, $model->where(
+                        $model->getRouteKeyName(), $parameters[$parameter->name]
+                    )->{$method}()
+                );
+            }
+        }
     }
 }
