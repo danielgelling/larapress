@@ -51,7 +51,7 @@ class Router extends BaseRouter
      */
     public function wordpress()
     {
-        $this->createWordpressRoute('GET', 'edit.php', [], 'PostController@index');
+        // $this->createWordpressRoute('GET', 'edit.php', [], 'PostController@index');
         $this->createWordpressRoute('GET', 'post.php', ['action' => 'edit'], 'PostController@edit');
         $this->createWordpressRoute('POST', 'post.php', [], 'PostController@update');
         // $this->createWordpressRoute('GET', 'post-new.php', [], 'PostController@create');
@@ -69,6 +69,8 @@ class Router extends BaseRouter
      */
     public function createWordpressRoute($methods, $script, $params, $action)
     {
+        // Check if controller and method exist, otherwise return so the route is
+        // not added.
         if ($this->actionReferencesController($action)) {
             $controllerAction = $this->convertToControllerAction($action);
             list($class, $method) = explode('@', $controllerAction['uses']);
@@ -163,7 +165,7 @@ class Router extends BaseRouter
         // route resolver on the request so middlewares assigned to the route will
         // receive access to this route instance for checking of the parameters.
         $route = $this->findRoute($request);
-
+// dd($route);
         // No route, let Wordpress handle it
         if(is_null($route))
             return;
@@ -177,6 +179,31 @@ class Router extends BaseRouter
         $response = $this->runRouteWithinStack($route, $request);
 
         return $this->prepareResponse($request, $response);
+    }
+
+    /**
+     * Run the given route within a Stack "onion" instance.
+     *
+     * @param  \Illuminate\Routing\Route  $route
+     * @param  \Illuminate\Http\Request  $request
+     * @return mixed
+     */
+    protected function runRouteWithinStack($route, Request $request)
+    {
+        $shouldSkipMiddleware = $this->container->bound('middleware.disable') &&
+                                $this->container->make('middleware.disable') === true;
+
+        $middleware = $shouldSkipMiddleware ? [] : $this->gatherRouteMiddlewares($route);
+
+        return (new Pipeline($this->container))
+                        ->send($request)
+                        ->through($middleware)
+                        ->then(function ($request) use ($route) {
+                            return $this->prepareResponse(
+                                $request,
+                                $route->run($request)
+                            );
+                        });
     }
 
     /**

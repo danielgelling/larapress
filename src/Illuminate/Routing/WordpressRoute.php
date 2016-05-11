@@ -2,6 +2,7 @@
 
 namespace Larapress\Illuminate\Routing;
 
+use App;
 use ReflectionMethod;
 use ReflectionFunction;
 use Illuminate\Http\Request as Request;
@@ -38,10 +39,26 @@ class WordpressRoute extends BaseRoute
      * Don't run the route action cause Wordpress will.
      *
      * @param  \Illuminate\Http\Request  $request
-     * @return mixed
+     * @return void
      */
     public function run(Request $request)
     {
+        list($class, $method) = explode('@', $this->getAction()['uses']);
+        $parameters = $this->signatureParameters();
+
+        $controller = new $class;
+
+        $args = [];
+
+        foreach ($parameters as $parameter) {
+            if( ! is_null($parameter->getClass())) {
+                $args[] = App::make($parameter->getClass()->getName());
+            } else {
+                $args[] = App::make('request')->get($parameter->getName());
+            }
+        }
+
+        call_user_func_array([$controller, $method], $args);
     }
 
     /**
@@ -71,10 +88,6 @@ class WordpressRoute extends BaseRoute
         } else {
             $parameters = (new ReflectionFunction($action['uses']))->getParameters();
         }
-
-        //SHOULD BE REPLACED
-        if(empty($parameters))
-            (new $class)->$method();
 
         return is_null($subClass) ? $parameters : array_filter($parameters, function ($p) use ($subClass) {
             return $p->getClass() && $p->getClass()->isSubclassOf($subClass);
