@@ -3,6 +3,7 @@
 namespace Larapress\Illuminate\Routing;
 
 use App;
+use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Container\Container;
 use Illuminate\Routing\Pipeline;
@@ -221,29 +222,39 @@ class Router extends BaseRouter
         if (is_null($parent)) {
             // Add a new menu item.
             \add_action('admin_menu', function () use ($name, $uri, $action) {
-                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
-                    if (is_callable($action['uses'])) {
-                        echo $action['uses']();
-                    } else {
-                        list($class, $method) = explode('@', $action['uses']);
-                        echo (new $class)->$method();
-                    }
-                });
+                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, $this->callController($action));
             });
         } else {
             // Add a new submenu item.
             $parent = $this->routes->getByName($parent);
 
             \add_action('admin_menu', function () use ($name, $uri, $action, $parent) {
-                add_submenu_page($parent->getUri(), 'My Cool Plugin Settings', $name, 'administrator',$uri, function () use ($action) {
-                    if (is_callable($action['uses'])) {
-                        echo $action['uses']();
-                    } else {
-                        list($class, $method) = explode('@', $action['uses']);
-                        echo (new $class)->$method();
-                    }
-                });
+                add_submenu_page($parent->getUri(), 'My Cool Plugin Settings', $name, 'administrator',$uri, $this->callController($action));
             });
+        }
+    }
+
+    protected function callController($action)
+    {
+        $parameters = $this->current->signatureParameters();
+
+        $args = [];
+
+        foreach ($parameters as $parameter) {
+            if (! is_null($parameter->getClass())) {
+                $args[] = App::make($parameter->getClass()->getName());
+            } else {
+                $args[] = App::make($request)->get($parameter->getName());
+            }
+        }
+
+        if (is_object($action['uses']) && $action['uses'] instanceof Closure) {
+            call_user_func_array($action['uses'], $args);
+        } else {
+            list($class, $method) = explode('@', $action['uses']);
+
+            $controller = new $class;
+            call_user_func_array([$controller, $method], $args);
         }
     }
 
