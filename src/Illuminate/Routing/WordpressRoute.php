@@ -3,8 +3,6 @@
 namespace Larapress\Illuminate\Routing;
 
 use App;
-use ReflectionMethod;
-use ReflectionFunction;
 use Illuminate\Http\Request as Request;
 use Illuminate\Routing\Route as BaseRoute;
 
@@ -51,10 +49,10 @@ class WordpressRoute extends BaseRoute
         $args = [];
 
         foreach ($parameters as $parameter) {
-            if( ! is_null($parameter->getClass())) {
+            if (! is_null($parameter->getClass())) {
                 $args[] = App::make($parameter->getClass()->getName());
             } else {
-                $args[] = App::make('request')->get($parameter->getName());
+                $args[] = $request->get($parameter->getName());
             }
         }
 
@@ -69,28 +67,5 @@ class WordpressRoute extends BaseRoute
     public function getUri()
     {
         return $this->uri;
-    }
-
-    /**
-     * Get the parameters that are listed in the route / controller signature.
-     *
-     * @param string|null  $subClass
-     * @return array
-     */
-    public function signatureParameters($subClass = null)
-    {
-        $action = $this->getAction();
-
-        if (is_string($action['uses'])) {
-            list($class, $method) = explode('@', $action['uses']);
-
-            $parameters = (new ReflectionMethod($class, $method))->getParameters();
-        } else {
-            $parameters = (new ReflectionFunction($action['uses']))->getParameters();
-        }
-
-        return is_null($subClass) ? $parameters : array_filter($parameters, function ($p) use ($subClass) {
-            return $p->getClass() && $p->getClass()->isSubclassOf($subClass);
-        });
     }
 }

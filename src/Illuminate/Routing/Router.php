@@ -2,8 +2,10 @@
 
 namespace Larapress\Illuminate\Routing;
 
+use App;
 use Illuminate\Http\Request;
 use Illuminate\Container\Container;
+use Illuminate\Routing\Pipeline;
 use Larapress\Illuminate\Routing\Route;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Events\RouteMatched;
@@ -75,8 +77,8 @@ class Router extends BaseRouter
             $controllerAction = $this->convertToControllerAction($action);
             list($class, $method) = explode('@', $controllerAction['uses']);
 
-            if (!class_exists($class)) return;
-            if (! method_exists($class, $method)) return;
+            if ( ! class_exists($class)) return;
+            if ( ! method_exists($class, $method)) return;
         }
 
         $this->wordpressRoutes->add($this->createRoute($methods, $script, $action, $params));
@@ -109,6 +111,7 @@ class Router extends BaseRouter
                 $methods, $this->prefix($uri), $action
             );
         }
+        // dd($route);
 
         // If we have groups that need to be merged, we will merge them now after this
         // route has already been created and is ready to go. After we're done with
@@ -164,11 +167,12 @@ class Router extends BaseRouter
         // First we will find a route that matches this request. We will also set the
         // route resolver on the request so middlewares assigned to the route will
         // receive access to this route instance for checking of the parameters.
-        $route = $this->findRoute($request);
-// dd($route);
-        // No route, let Wordpress handle it
-        if(is_null($route))
+        try {
+            $route = $this->findRoute($request);
+        } catch (NotFoundHttpException $e) {
+            // No route found, let Wordpress handle it.
             return;
+        }
 
         $request->setRouteResolver(function () use ($route) {
             return $route;
@@ -182,31 +186,6 @@ class Router extends BaseRouter
     }
 
     /**
-     * Run the given route within a Stack "onion" instance.
-     *
-     * @param  \Illuminate\Routing\Route  $route
-     * @param  \Illuminate\Http\Request  $request
-     * @return mixed
-     */
-    protected function runRouteWithinStack($route, Request $request)
-    {
-        $shouldSkipMiddleware = $this->container->bound('middleware.disable') &&
-                                $this->container->make('middleware.disable') === true;
-
-        $middleware = $shouldSkipMiddleware ? [] : $this->gatherRouteMiddlewares($route);
-
-        return (new Pipeline($this->container))
-                        ->send($request)
-                        ->through($middleware)
-                        ->then(function ($request) use ($route) {
-                            return $this->prepareResponse(
-                                $request,
-                                $route->run($request)
-                            );
-                        });
-    }
-
-    /**
      * Find the route matching a given request.
      *
      * @param  \Illuminate\Http\Request  $request
@@ -214,39 +193,33 @@ class Router extends BaseRouter
      */
     protected function findRoute($request)
     {
-        try {
-            $this->current = $route = $this->matchRoutes($request);
+        $this->current = $route = $this->matchRoutes($request);
 
-            $this->container->instance('Illuminate\Routing\Route', $route);
+        $this->container->instance('Illuminate\Routing\Route', $route);
 
-            return $this->substituteBindings($route);
-        } catch (NotFoundHttpException $e) {
-            return;
-        }
+        return $this->substituteBindings($route);
     }
 
     public function matchRoutes($request)
     {
+        // First check if there is a match in the plugin routes,
+        // if not check the default Worpress routes for a match.
         try {
             return $this->routes->match($request);
-        } catch (NotFoundHttpException $e) { }
-
-        try {
+        } catch (NotFoundHttpException $e) {
             return $this->wordpressRoutes->match($request);
-        } catch (NotFoundHttpException $e) { }
-
-        throw new NotFoundHttpException;
+        }
     }
 
     public function addToMenu($name, $parent = null)
     {
-        if (\App::make('request')->server->get('SCRIPT_NAME') === 'artisan')
-            return;
+        if (App::runningInConsole()) return;
 
         $action = $this->route->getAction();
         $uri = $this->route->getUri();
 
         if (is_null($parent)) {
+            // Add a new menu item.
             \add_action('admin_menu', function () use ($name, $uri, $action) {
                 add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
                     if (is_callable($action['uses'])) {
@@ -258,6 +231,7 @@ class Router extends BaseRouter
                 });
             });
         } else {
+            // Add a new submenu item.
             $parent = $this->routes->getByName($parent);
 
             \add_action('admin_menu', function () use ($name, $uri, $action, $parent) {
@@ -271,30 +245,6 @@ class Router extends BaseRouter
                 });
             });
         }
-    }
-
-    public function route($method, $uri, $action)
-    {
-        if ($this->actionReferencesController($action)) {
-            $action = $this->convertToControllerAction($action);
-        }
-
-        if (\App::make('request')->server->get('SCRIPT_NAME') !== 'artisan') {
-            $scope = $this;
-
-            \add_action('admin_menu', function () use ($scope, $uri, $action) {
-                add_utility_page($scope->uri, 'My Cool Plugin Settings', 'administrator', $this->uri . '&subpage=' . $uri, function () use ($action) {
-                    list($class, $method) = explode('@', $action['uses']);
-                    echo (new $class)->$method();
-                });
-            });
-        }
-
-        $action = function () { return; };
-
-        $this->routes->add($this->createRoute(['GET', 'HEAD'], $uri, $action));
-
-        return $this;
     }
 
     public function slugify($slug)

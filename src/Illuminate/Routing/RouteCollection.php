@@ -52,8 +52,8 @@ class RouteCollection extends BaseRouteCollection
      */
     protected function check(array $routes, $request, $includingMethod = true)
     {
-        // if (isset($routes[$request->get('page')]))
-        //     return $routes[$request->get('page')];
+        if (isset($routes[$request->get('page')]))
+            return $routes[$request->get('page')];
 
         return;
     }

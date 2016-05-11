@@ -2,7 +2,6 @@
 
 namespace Larapress\Illuminate\Routing;
 
-use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Routing\RouteCollection as BaseRouteCollection;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;

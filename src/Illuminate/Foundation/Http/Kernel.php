@@ -5,7 +5,7 @@ namespace Larapress\Illuminate\Foundation\Http;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Foundation\Application;
-use Larapress\Illuminate\Routing\Pipeline;
+use Illuminate\Routing\Pipeline;
 use Illuminate\Foundation\Http\Kernel as BaseKernel;
 
 class Kernel extends BaseKernel
