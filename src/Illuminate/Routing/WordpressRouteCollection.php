@@ -12,6 +12,9 @@ class WordpressRouteCollection extends BaseRouteCollection
     public function match(Request $request)
     {
         preg_match('/(\/wp-admin\/)([^\?]*)\??/', $request->server->get('REQUEST_URI'), $matches);
+
+        if(!isset($matches[2])) throw new NotFoundHttpException;
+
         $uri = $matches[2];
 
         $routes = $this->get($request->getMethod());

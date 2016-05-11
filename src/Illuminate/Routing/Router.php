@@ -18,7 +18,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class Router extends BaseRouter
 {
     /**
-     * This holds all Worpress' default routes.
+     * This holds all Wordpress' default routes.
      *
      * @var Larapress\Illuminate\Routing\WordpressRouteCollection
      */
@@ -53,6 +53,9 @@ class Router extends BaseRouter
     {
         $this->createWordpressRoute('GET', 'edit.php', [], 'PostController@index');
         $this->createWordpressRoute('GET', 'post.php', ['action' => 'edit'], 'PostController@edit');
+        $this->createWordpressRoute('POST', 'post.php', [], 'PostController@update');
+        // $this->createWordpressRoute('GET', 'post-new.php', [], 'PostController@create');
+        // $this->createWordpressRoute('GET', 'post-new.php', [], 'PostController@create');
     }
 
     /**
@@ -66,6 +69,14 @@ class Router extends BaseRouter
      */
     public function createWordpressRoute($methods, $script, $params, $action)
     {
+        if ($this->actionReferencesController($action)) {
+            $controllerAction = $this->convertToControllerAction($action);
+            list($class, $method) = explode('@', $controllerAction['uses']);
+
+            if (!class_exists($class)) return;
+            if (! method_exists($class, $method)) return;
+        }
+
         $this->wordpressRoutes->add($this->createRoute($methods, $script, $action, $params));
     }
 
@@ -86,7 +97,7 @@ class Router extends BaseRouter
             $action = $this->convertToControllerAction($action);
         }
 
-        // If the params variable is an array it means it's a Worpress route.
+        // If the params variable is an array it means it's a Wordpress route.
         if (is_array($params)) {
             $route = $this->newWordpressRoute(
                 $methods, $uri, $action, $params
@@ -200,6 +211,116 @@ class Router extends BaseRouter
         throw new NotFoundHttpException;
     }
 
+    public function addToMenu($name, $parent = null)
+    {
+        if (\App::make('request')->server->get('SCRIPT_NAME') === 'artisan')
+            return;
+
+        $action = $this->route->getAction();
+        $uri = $this->route->getUri();
+
+        if (is_null($parent)) {
+            \add_action('admin_menu', function () use ($name, $uri, $action) {
+                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
+                    if (is_callable($action['uses'])) {
+                        echo $action['uses']();
+                    } else {
+                        list($class, $method) = explode('@', $action['uses']);
+                        echo (new $class)->$method();
+                    }
+                });
+            });
+        } else {
+            $parent = $this->routes->getByName($parent);
+
+            \add_action('admin_menu', function () use ($name, $uri, $action, $parent) {
+                add_submenu_page($parent->getUri(), 'My Cool Plugin Settings', $name, 'administrator',$uri, function () use ($action) {
+                    if (is_callable($action['uses'])) {
+                        echo $action['uses']();
+                    } else {
+                        list($class, $method) = explode('@', $action['uses']);
+                        echo (new $class)->$method();
+                    }
+                });
+            });
+        }
+    }
+
+    public function route($method, $uri, $action)
+    {
+        if ($this->actionReferencesController($action)) {
+            $action = $this->convertToControllerAction($action);
+        }
+
+        if (\App::make('request')->server->get('SCRIPT_NAME') !== 'artisan') {
+            $scope = $this;
+
+            \add_action('admin_menu', function () use ($scope, $uri, $action) {
+                add_utility_page($scope->uri, 'My Cool Plugin Settings', 'administrator', $this->uri . '&subpage=' . $uri, function () use ($action) {
+                    list($class, $method) = explode('@', $action['uses']);
+                    echo (new $class)->$method();
+                });
+            });
+        }
+
+        $action = function () { return; };
+
+        $this->routes->add($this->createRoute(['GET', 'HEAD'], $uri, $action));
+
+        return $this;
+    }
+
+    public function slugify($slug)
+    {
+        // replace non letter or digits by -
+        $slug = preg_replace('~[^\pL\d]+~u', '-', $slug);
+
+        // transliterate
+        $slug = iconv('utf-8', 'us-ascii//TRANSLIT', $slug);
+
+        // remove unwanted characters
+        $slug = preg_replace('~[^-\w]+~', '', $slug);
+
+        // trim
+        $slug = trim($slug, '-');
+
+        // remove duplicate -
+        $slug = preg_replace('~-+~', '-', $slug);
+
+        // lowercase
+        $slug = strtolower($slug);
+
+        return $slug;
+    }
+
+    /**
+     * Substitute the implicit Eloquent model bindings for the route.
+     *
+     * @param  \Illuminate\Routing\Route  $route
+     * @return void
+     */
+    protected function substituteImplicitBindings($route)
+    {
+        $parameters = $route->parameters();
+
+        foreach ($route->signatureParameters(Model::class) as $parameter) {
+            $class = $parameter->getClass();
+
+            if (array_key_exists($parameter->name, $parameters) &&
+                ! $route->getParameter($parameter->name) instanceof Model) {
+                $method = $parameter->isDefaultValueAvailable() ? 'first' : 'firstOrFail';
+
+                $model = $class->newInstance();
+
+                $route->setParameter(
+                    $parameter->name, $model->where(
+                        $model->getRouteKeyName(), $parameters[$parameter->name]
+                    )->{$method}()
+                );
+            }
+        }
+    }
+
      /**
      * Register a new GET route with the router.
      *
@@ -298,165 +419,5 @@ class Router extends BaseRouter
         $this->route = $this->addRoute($verbs, $uri, $action);
 
         return $this;
-    }
-
-
-
-
-
-
-
-
-
-    public function addToMenu($name, $parent = null)
-    {
-        if (\App::make('request')->server->get('SCRIPT_NAME') === 'artisan')
-            return;
-
-        $action = $this->route->getAction();
-        $uri = $this->route->getUri();
-
-        if (is_null($parent)) {
-            \add_action('admin_menu', function () use ($name, $uri, $action) {
-                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
-                    list($class, $method) = explode('@', $action['uses']);
-                    echo (new $class)->$method();
-                });
-            });
-        } else {
-            $parent = $this->routes->getByName($parent);
-
-            \add_action('admin_menu', function () use ($name, $uri, $action, $parent) {
-                add_submenu_page($parent->getUri(), 'My Cool Plugin Settings', $name, 'administrator',$uri, function () use ($action) {
-                    list($class, $method) = explode('@', $action['uses']);
-                    echo (new $class)->$method();
-                });
-            });
-        }
-    }
-
-    public function menu($name, $action)
-    {
-        $this->uri = $uri = $this->slugify($name);
-
-        if ($this->actionReferencesController($action)) {
-            $action = $this->convertToControllerAction($action);
-        }
-
-        if (\App::make('request')->server->get('SCRIPT_NAME') !== 'artisan') {
-            \add_action('admin_menu', function () use ($name, $uri, $action) {
-                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
-                    list($class, $method) = explode('@', $action['uses']);
-                    echo (new $class)->$method();
-                });
-            });
-        }
-
-        $action = function () { return; };
-
-        $this->routes->add($this->createRoute(['GET', 'HEAD'], $uri, $action));
-
-        return $this;
-    }
-
-    public function item($name, $action)
-    {
-        $uri = $this->slugify($name);
-
-        if ($this->actionReferencesController($action)) {
-            $action = $this->convertToControllerAction($action);
-        }
-
-        if (\App::make('request')->server->get('SCRIPT_NAME') !== 'artisan') {
-            $scope = $this;
-
-            \add_action('admin_menu', function () use ($scope, $name, $uri, $action) {
-                add_submenu_page($scope->uri, 'My Cool Plugin Settings', $name, 'administrator', $this->uri . '&subpage=' . $uri, function () use ($action) {
-                    list($class, $method) = explode('@', $action['uses']);
-                    echo (new $class)->$method();
-                });
-            });
-        }
-
-        $action = function () { return; };
-
-        $this->routes->add($this->createRoute(['GET', 'HEAD'], $uri, $action));
-
-        return $this;
-    }
-
-    public function route($method, $uri, $action)
-    {
-        if ($this->actionReferencesController($action)) {
-            $action = $this->convertToControllerAction($action);
-        }
-
-        if (\App::make('request')->server->get('SCRIPT_NAME') !== 'artisan') {
-            $scope = $this;
-
-            \add_action('admin_menu', function () use ($scope, $uri, $action) {
-                add_utility_page($scope->uri, 'My Cool Plugin Settings', 'administrator', $this->uri . '&subpage=' . $uri, function () use ($action) {
-                    list($class, $method) = explode('@', $action['uses']);
-                    echo (new $class)->$method();
-                });
-            });
-        }
-
-        $action = function () { return; };
-
-        $this->routes->add($this->createRoute(['GET', 'HEAD'], $uri, $action));
-
-        return $this;
-    }
-
-    public function slugify($slug)
-    {
-        // replace non letter or digits by -
-        $slug = preg_replace('~[^\pL\d]+~u', '-', $slug);
-
-        // transliterate
-        $slug = iconv('utf-8', 'us-ascii//TRANSLIT', $slug);
-
-        // remove unwanted characters
-        $slug = preg_replace('~[^-\w]+~', '', $slug);
-
-        // trim
-        $slug = trim($slug, '-');
-
-        // remove duplicate -
-        $slug = preg_replace('~-+~', '-', $slug);
-
-        // lowercase
-        $slug = strtolower($slug);
-
-        return $slug;
-    }
-
-    /**
-     * Substitute the implicit Eloquent model bindings for the route.
-     *
-     * @param  \Illuminate\Routing\Route  $route
-     * @return void
-     */
-    protected function substituteImplicitBindings($route)
-    {
-        $parameters = $route->parameters();
-// dd($parameters);
-        foreach ($route->signatureParameters(Model::class) as $parameter) {
-            $class = $parameter->getClass();
-
-            if (array_key_exists($parameter->name, $parameters) &&
-                ! $route->getParameter($parameter->name) instanceof Model) {
-                $method = $parameter->isDefaultValueAvailable() ? 'first' : 'firstOrFail';
-
-                $model = $class->newInstance();
-
-                $route->setParameter(
-                    $parameter->name, $model->where(
-                        $model->getRouteKeyName(), $parameters[$parameter->name]
-                    )->{$method}()
-                );
-            }
-        }
     }
 }
