@@ -2,11 +2,8 @@
 
 namespace Larapress\Illuminate\Routing;
 
-use App;
-use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Container\Container;
-use Illuminate\Routing\Pipeline;
 use Larapress\Illuminate\Routing\Route;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Routing\Events\RouteMatched;
@@ -21,7 +18,7 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class Router extends BaseRouter
 {
     /**
-     * This holds all Wordpress' default routes.
+     * This holds all Worpress' default routes.
      *
      * @var Larapress\Illuminate\Routing\WordpressRouteCollection
      */
@@ -54,11 +51,11 @@ class Router extends BaseRouter
      */
     public function wordpress()
     {
-        // $this->createWordpressRoute('GET', 'edit.php', [], 'PostController@index');
-        $this->createWordpressRoute('GET', 'post.php', ['action' => 'edit'], 'PostController@edit');
-        $this->createWordpressRoute('POST', 'post.php', [], 'PostController@update');
-        // $this->createWordpressRoute('GET', 'post-new.php', [], 'PostController@create');
-        // $this->createWordpressRoute('GET', 'post-new.php', [], 'PostController@create');
+        $this->createWordpressRoute('GET', 'edit.php', [], 'WPPostController@index');
+        $this->createWordpressRoute('GET', 'post.php', ['action' => 'edit'], 'WPPostController@edit');
+        $this->createWordpressRoute('POST', 'post.php', [], 'WPPostController@update');
+        $this->createWordpressRoute('GET', 'post-new.php', [], 'WPPostController@create');
+        // $this->createWordpressRoute('POST', 'post.php', ['original_publish' => 'Publish'], 'WPPostController@store');
     }
 
     /**
@@ -72,16 +69,6 @@ class Router extends BaseRouter
      */
     public function createWordpressRoute($methods, $script, $params, $action)
     {
-        // Check if controller and method exist, otherwise return so the route is
-        // not added.
-        if ($this->actionReferencesController($action)) {
-            $controllerAction = $this->convertToControllerAction($action);
-            list($class, $method) = explode('@', $controllerAction['uses']);
-
-            if ( ! class_exists($class)) return;
-            if ( ! method_exists($class, $method)) return;
-        }
-
         $this->wordpressRoutes->add($this->createRoute($methods, $script, $action, $params));
     }
 
@@ -102,7 +89,7 @@ class Router extends BaseRouter
             $action = $this->convertToControllerAction($action);
         }
 
-        // If the params variable is an array it means it's a Wordpress route.
+        // If the params variable is an array it means it's a Worpress route.
         if (is_array($params)) {
             $route = $this->newWordpressRoute(
                 $methods, $uri, $action, $params
@@ -112,7 +99,6 @@ class Router extends BaseRouter
                 $methods, $this->prefix($uri), $action
             );
         }
-        // dd($route);
 
         // If we have groups that need to be merged, we will merge them now after this
         // route has already been created and is ready to go. After we're done with
@@ -136,6 +122,18 @@ class Router extends BaseRouter
      */
     protected function newRoute($methods, $uri, $action)
     {
+        \add_action('admin_menu', function () use ($uri, $action) {
+            add_submenu_page(null, 'My Cool Plugin Settings', $uri, 'administrator', $uri, function () use ($action) {
+                if($action['uses'] instanceof \Closure) {
+                    $response = $this->callClosure($action);
+                } else {
+                    $response = $this->callControllerMethod($action);
+                }
+
+                echo $response;
+            });
+        });
+
         return (new Route($methods, $uri, $action))
                     ->setRouter($this)
                     ->setContainer($this->container);
@@ -168,12 +166,12 @@ class Router extends BaseRouter
         // First we will find a route that matches this request. We will also set the
         // route resolver on the request so middlewares assigned to the route will
         // receive access to this route instance for checking of the parameters.
-        try {
-            $route = $this->findRoute($request);
-        } catch (NotFoundHttpException $e) {
-            // No route found, let Wordpress handle it.
+
+        $route = $this->findRoute($request);
+
+        // No route, let Wordpress handle it
+        if (is_null($route))
             return;
-        }
 
         $request->setRouteResolver(function () use ($route) {
             return $route;
@@ -181,7 +179,17 @@ class Router extends BaseRouter
 
         $this->events->fire(new \Illuminate\Routing\Events\RouteMatched($route, $request));
 
-        $response = $this->runRouteWithinStack($route, $request);
+        $action = $route->getAction();
+
+        if($action['uses'] instanceof \Closure) {
+            $response = $this->callClosure($action);
+        } else {
+            $response = $this->callControllerMethod($action);
+        }
+
+        if (! $response instanceof \Illuminate\Http\JsonResponse) {
+            $response = $this->runRouteWithinStack($route, $request);
+        }
 
         return $this->prepareResponse($request, $response);
     }
@@ -194,119 +202,28 @@ class Router extends BaseRouter
      */
     protected function findRoute($request)
     {
-        $this->current = $route = $this->matchRoutes($request);
+        try {
+            $this->current = $route = $this->matchRoutes($request);
 
-        $this->container->instance('Illuminate\Routing\Route', $route);
+            $this->container->instance('Illuminate\Routing\Route', $route);
 
-        return $this->substituteBindings($route);
+            return $this->substituteBindings($route);
+        } catch (NotFoundHttpException $e) {
+            return;
+        }
     }
 
     public function matchRoutes($request)
     {
-        // First check if there is a match in the plugin routes,
-        // if not check the default Worpress routes for a match.
         try {
             return $this->routes->match($request);
-        } catch (NotFoundHttpException $e) {
+        } catch (NotFoundHttpException $e) { }
+
+        try {
             return $this->wordpressRoutes->match($request);
-        }
-    }
+        } catch (NotFoundHttpException $e) { }
 
-    public function addToMenu($name, $parent = null)
-    {
-        if (App::runningInConsole()) return;
-
-        $action = $this->route->getAction();
-        $uri = $this->route->getUri();
-
-        if (is_null($parent)) {
-            // Add a new menu item.
-            \add_action('admin_menu', function () use ($name, $uri, $action) {
-                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, $this->callController($action));
-            });
-        } else {
-            // Add a new submenu item.
-            $parent = $this->routes->getByName($parent);
-
-            \add_action('admin_menu', function () use ($name, $uri, $action, $parent) {
-                add_submenu_page($parent->getUri(), 'My Cool Plugin Settings', $name, 'administrator',$uri, $this->callController($action));
-            });
-        }
-    }
-
-    protected function callController($action)
-    {
-        $parameters = $this->current->signatureParameters();
-
-        $args = [];
-
-        foreach ($parameters as $parameter) {
-            if (! is_null($parameter->getClass())) {
-                $args[] = App::make($parameter->getClass()->getName());
-            } else {
-                $args[] = App::make($request)->get($parameter->getName());
-            }
-        }
-
-        if (is_object($action['uses']) && $action['uses'] instanceof Closure) {
-            call_user_func_array($action['uses'], $args);
-        } else {
-            list($class, $method) = explode('@', $action['uses']);
-
-            $controller = new $class;
-            call_user_func_array([$controller, $method], $args);
-        }
-    }
-
-    public function slugify($slug)
-    {
-        // replace non letter or digits by -
-        $slug = preg_replace('~[^\pL\d]+~u', '-', $slug);
-
-        // transliterate
-        $slug = iconv('utf-8', 'us-ascii//TRANSLIT', $slug);
-
-        // remove unwanted characters
-        $slug = preg_replace('~[^-\w]+~', '', $slug);
-
-        // trim
-        $slug = trim($slug, '-');
-
-        // remove duplicate -
-        $slug = preg_replace('~-+~', '-', $slug);
-
-        // lowercase
-        $slug = strtolower($slug);
-
-        return $slug;
-    }
-
-    /**
-     * Substitute the implicit Eloquent model bindings for the route.
-     *
-     * @param  \Illuminate\Routing\Route  $route
-     * @return void
-     */
-    protected function substituteImplicitBindings($route)
-    {
-        $parameters = $route->parameters();
-
-        foreach ($route->signatureParameters(Model::class) as $parameter) {
-            $class = $parameter->getClass();
-
-            if (array_key_exists($parameter->name, $parameters) &&
-                ! $route->getParameter($parameter->name) instanceof Model) {
-                $method = $parameter->isDefaultValueAvailable() ? 'first' : 'firstOrFail';
-
-                $model = $class->newInstance();
-
-                $route->setParameter(
-                    $parameter->name, $model->where(
-                        $model->getRouteKeyName(), $parameters[$parameter->name]
-                    )->{$method}()
-                );
-            }
-        }
+        throw new NotFoundHttpException;
     }
 
      /**
@@ -407,5 +324,164 @@ class Router extends BaseRouter
         $this->route = $this->addRoute($verbs, $uri, $action);
 
         return $this;
+    }
+
+    public function callClosure($action) {
+        $reflectionParameters = (new \ReflectionFunction($action['uses']))->getParameters();
+
+        $parameters = [];
+
+        foreach ($reflectionParameters as $parameter)
+            $parameters[] = \App::make($parameter->getClass()->name);
+
+        return call_user_func_array($action['uses'], $parameters);
+    }
+
+    public function callControllerMethod($action) {
+        list($class, $method) = explode('@', $action['uses']);
+
+        // If method exists use reflection to get the parameters if supplied.
+        if (method_exists($class, $method)) {
+            $reflectionParameters = (new \ReflectionMethod($class, $method))
+                                      ->getParameters();
+
+            $parameters = [];
+
+            foreach ($reflectionParameters as $parameter) {
+                $parameter = \App::make($parameter->getClass()->name);
+
+                $model = explode('\\', get_class($parameter));
+                $model = lcfirst($model[count($model) - 1]);
+                $id = \App::make('request')->get($model);
+
+                if (! is_null($id))
+                    $parameter = $parameter->findOrFail($id);
+
+                $parameters[] = $parameter;
+            }
+
+            return call_user_func_array(array((new $class), $method), $parameters);
+        } else {
+            // Otherwise we will call the method, because magic methods, like
+            // __call() might be used.
+            return (new $class)->$method();
+        }
+    }
+
+    public function addToMenu($name, $parent = null)
+    {
+        if (\App::make('request')->server->get('SCRIPT_NAME') === 'artisan')
+            return $this;
+
+        if (! is_null($parent)) {
+            $parts = explode('-',$parent);
+            if ($parts[0] == 'dashicons') {
+                $icon = $parent;
+                $parent = null;
+            }
+        }
+
+        $action = $this->route->getAction();
+        $this->uri = $uri = $this->route->getUri();
+
+        if (is_null($parent)) {
+            \add_action('admin_menu', function () use ($name, $uri, $action, $icon) {
+                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
+                    if($action['uses'] instanceof \Closure) {
+                        echo $this->callClosure($action);
+                    } else {
+                        echo $this->callControllerMethod($action);
+                    }
+                }, $icon);
+            });
+        } else {
+            $parent = $this->routes->getByName($parent);
+
+            \add_action('admin_menu', function () use ($name, $uri, $action, $parent) {
+                add_submenu_page($parent->getUri(), 'My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
+                    if($action['uses'] instanceof \Closure) {
+                        echo $this->callClosure($action);
+                    } else {
+                        echo $this->callControllerMethod($action);
+                    }
+                });
+            });
+        }
+        return $this;
+    }
+
+    public function route($method, $uri, $action)
+    {
+        if ($this->actionReferencesController($action)) {
+            $action = $this->convertToControllerAction($action);
+        }
+
+        if (\App::make('request')->server->get('SCRIPT_NAME') !== 'artisan') {
+            $scope = $this;
+
+            \add_action('admin_menu', function () use ($scope, $uri, $action) {
+                add_utility_page($scope->uri, 'My Cool Plugin Settings', 'administrator', $this->uri . '&subpage=' . $uri, function () use ($action) {
+                    list($class, $method) = explode('@', $action['uses']);
+                    echo (new $class)->$method();
+                });
+            });
+        }
+
+        $action = function () { return; };
+
+        $this->routes->add($this->createRoute(['GET', 'HEAD'], $uri, $action));
+
+        return $this;
+    }
+
+    public function slugify($slug)
+    {
+        // replace non letter or digits by -
+        $slug = preg_replace('~[^\pL\d]+~u', '-', $slug);
+
+        // transliterate
+        $slug = iconv('utf-8', 'us-ascii//TRANSLIT', $slug);
+
+        // remove unwanted characters
+        $slug = preg_replace('~[^-\w]+~', '', $slug);
+
+        // trim
+        $slug = trim($slug, '-');
+
+        // remove duplicate -
+        $slug = preg_replace('~-+~', '-', $slug);
+
+        // lowercase
+        $slug = strtolower($slug);
+
+        return $slug;
+    }
+
+    /**
+     * Substitute the implicit Eloquent model bindings for the route.
+     *
+     * @param  \Illuminate\Routing\Route  $route
+     * @return void
+     */
+    protected function substituteImplicitBindings($route)
+    {
+        $parameters = $route->parameters();
+
+        foreach ($route->signatureParameters(Model::class) as $parameter) {
+            $class = $parameter->getClass();
+
+            if (array_key_exists($parameter->name, $parameters) &&
+                ! $route->getParameter($parameter->name) instanceof Model) {
+                $method = $parameter->isDefaultValueAvailable() ? 'first' : 'firstOrFail';
+
+                $model = $class->newInstance();
+
+                $route->setParameter(
+                    $parameter->name, $model->where(
+                        $model->getRouteKeyName(), $parameters[$parameter->name]
+                    )->{$method}()
+                );
+            }
+        }
     }
 }

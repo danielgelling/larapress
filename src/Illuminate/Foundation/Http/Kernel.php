@@ -5,7 +5,7 @@ namespace Larapress\Illuminate\Foundation\Http;
 use Illuminate\Routing\Router;
 use Illuminate\Support\Facades\Facade;
 use Illuminate\Foundation\Application;
-use Illuminate\Routing\Pipeline;
+use Larapress\Illuminate\Routing\Pipeline;
 use Illuminate\Foundation\Http\Kernel as BaseKernel;
 
 class Kernel extends BaseKernel
@@ -66,9 +66,6 @@ class Kernel extends BaseKernel
      */
     protected function sendRequestThroughRouter($request)
     {
-        // hier verder, $request bevat ook pagina naam ;-)
-        // dd($request);
-
         $this->app->instance('request', $request);
 
         Facade::clearResolvedInstance('request');

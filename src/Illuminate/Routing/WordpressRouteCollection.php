@@ -2,6 +2,7 @@
 
 namespace Larapress\Illuminate\Routing;
 
+use Illuminate\Support\Arr;
 use Illuminate\Http\Request;
 use Illuminate\Routing\RouteCollection as BaseRouteCollection;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -12,7 +13,7 @@ class WordpressRouteCollection extends BaseRouteCollection
     {
         preg_match('/(\/wp-admin\/)([^\?]*)\??/', $request->server->get('REQUEST_URI'), $matches);
 
-        if(!isset($matches[2])) throw new NotFoundHttpException;
+        if (empty($matches)) throw new NotFoundHttpException;
 
         $uri = $matches[2];
 

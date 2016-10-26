@@ -52,9 +52,13 @@ class RouteCollection extends BaseRouteCollection
      */
     protected function check(array $routes, $request, $includingMethod = true)
     {
-        if (isset($routes[$request->get('page')]))
-            return $routes[$request->get('page')];
+        foreach ($routes as $route) {
+            if ($route->getUri() == $request->get('page') . '.' . $request->get('subpage'))
+                return $route;
+            if ($route->getUri() == $request->get('page'))
+                return $route;
+        }
 
-        return;
+        return null;
     }
 }
