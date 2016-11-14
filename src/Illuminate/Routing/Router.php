@@ -122,15 +122,17 @@ class Router extends BaseRouter
      */
     protected function newRoute($methods, $uri, $action)
     {
-        \add_action('admin_menu', function () use ($uri, $action) {
-            add_submenu_page(null, 'My Cool Plugin Settings', $uri, 'administrator', $uri, function () use ($action) {
-                if($action['uses'] instanceof \Closure) {
-                    $response = $this->callClosure($action);
-                } else {
-                    $response = $this->callControllerMethod($action);
-                }
+        $scope = $this;
+        \add_action('admin_menu', function () use ($uri, $action, $scope) {
+            add_submenu_page(null, 'My Cool Plugin Settings', $uri, 'administrator', $uri, function () use ($action, $scope) {
+                echo $scope->cache;
+                // if($action['uses'] instanceof \Closure) {
+                //     $response = $this->callClosure($action);
+                // } else {
+                //     $response = $this->callControllerMethod($action);
+                // }
 
-                echo $response;
+                // echo $response;
             });
         });
 
@@ -188,6 +190,7 @@ class Router extends BaseRouter
         }
 
         if (! $response instanceof \Illuminate\Http\JsonResponse) {
+            $this->cache = $response;
             $response = $this->runRouteWithinStack($route, $request);
         }
 
