@@ -189,6 +189,12 @@ class Router extends BaseRouter
             $response = $this->callControllerMethod($action);
         }
 
+        if ($response instanceof \Illuminate\Http\RedirectResponse) {
+            \add_action('admin_init', function () use ($response) {
+                header('Location: ' . $response->getTargetUrl());
+            });
+        }
+
         if (! $response instanceof \Illuminate\Http\JsonResponse) {
             $this->cache = $response;
             $response = $this->runRouteWithinStack($route, $request);
