@@ -9,9 +9,6 @@
     ],
     "require": {},
     "autoload": {
-        "files": [
-            "src/Illuminate/Foundation/helpers.php"
-        ],
         "psr-4": {
             "Larapress\\": "src/"
         }
