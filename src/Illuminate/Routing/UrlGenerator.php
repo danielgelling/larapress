@@ -185,7 +185,9 @@ class UrlGenerator implements UrlGeneratorContract
             $query = '';
         }
 
-        return $this->trimUrl($root, $path, $tail).$query;
+        $query = str_replace('?', '&', $query);
+
+        return $root . '?page=' . $path . $query;
     }
 
     /**
