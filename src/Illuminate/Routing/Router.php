@@ -124,7 +124,7 @@ class Router extends BaseRouter
     {
         $scope = $this;
         \add_action('admin_menu', function () use ($uri, $action, $scope) {
-            add_submenu_page(null, 'My Cool Plugin Settings', $uri, 'administrator', $uri, function () use ($action, $scope) {
+            add_submenu_page(null, '', $uri, 'administrator', $uri, function () use ($action, $scope) {
                 echo $scope->cache;
                 // if($action['uses'] instanceof \Closure) {
                 //     $response = $this->callClosure($action);
@@ -395,7 +395,7 @@ class Router extends BaseRouter
 
         if (is_null($parent)) {
             \add_action('admin_menu', function () use ($name, $uri, $action, $icon) {
-                add_menu_page('My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
+                add_menu_page('', $name, 'administrator', $uri, function () use ($action) {
                     if($action['uses'] instanceof \Closure) {
                         echo $this->callClosure($action);
                     } else {
@@ -407,7 +407,7 @@ class Router extends BaseRouter
             $parent = $this->routes->getByName($parent);
 
             \add_action('admin_menu', function () use ($name, $uri, $action, $parent) {
-                add_submenu_page($parent->getUri(), 'My Cool Plugin Settings', $name, 'administrator', $uri, function () use ($action) {
+                add_submenu_page($parent->getUri(), '', $name, 'administrator', $uri, function () use ($action) {
                     if($action['uses'] instanceof \Closure) {
                         echo $this->callClosure($action);
                     } else {
@@ -429,7 +429,7 @@ class Router extends BaseRouter
             $scope = $this;
 
             \add_action('admin_menu', function () use ($scope, $uri, $action) {
-                add_utility_page($scope->uri, 'My Cool Plugin Settings', 'administrator', $this->uri . '&subpage=' . $uri, function () use ($action) {
+                add_utility_page($scope->uri, '', 'administrator', $this->uri . '&subpage=' . $uri, function () use ($action) {
                     list($class, $method) = explode('@', $action['uses']);
                     echo (new $class)->$method();
                 });
